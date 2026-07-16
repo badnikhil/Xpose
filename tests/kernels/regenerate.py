@@ -40,9 +40,12 @@ GODBOLT = "https://godbolt.org"
 CLSPV_ARGS = ("-cl-std=CL3.0 -inline-entry-points -pod-pushconstant "
               "-uniform-workgroup-size -spv-version=1.3")
 
-# Default: the clspv-pinned SPIRV-Tools built out-of-tree (see
-# agent-docs/environment.md); override with --spirv-tools-bin.
-SPIRV_TOOLS = "/home/nikhil/Desktop/Hackathon/third_party/spirv-tools-build/tools"
+# Default: the clspv-pinned SPIRV-Tools built out-of-tree into the repo's
+# gitignored third_party/spirv-tools-build/ (see agent-docs/environment.md);
+# override with --spirv-tools-bin. Resolved relative to this script so the
+# repo stays relocatable.
+SPIRV_TOOLS = str((pathlib.Path(__file__).resolve().parent
+                   / "../../third_party/spirv-tools-build/tools").resolve())
 TARGET_ENV = "vulkan1.1"
 
 

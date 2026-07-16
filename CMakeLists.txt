@@ -5,9 +5,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Third-party checkouts live one level up, shared with the rest of the hackathon
-# workspace. Override for out-of-workspace builds.
-set(XPOSE_THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party"
+# Third-party checkouts are git submodules of this repo (run
+# `git submodule update --init --recursive` after cloning). Override for
+# out-of-tree checkouts.
+set(XPOSE_THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
     CACHE PATH "Directory containing Vulkan-Headers, volk, VulkanMemoryAllocator, googletest")
 
 set(XPOSE_VULKAN_HEADERS "${XPOSE_THIRD_PARTY_DIR}/Vulkan-Headers/include")

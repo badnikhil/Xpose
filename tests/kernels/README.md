@@ -27,7 +27,8 @@ hosted clspv**:
 - All output filters disabled in the request — godbolt returns SPIR-V
   **disassembly text**, which is reassembled with `spirv-as` and validated
   with `spirv-val --target-env vulkan1.1` (SPIRV-Tools v2025.5, clspv's
-  pinned commit `fb747184`, built at
+  pinned commit `fb747184` from `third_party/clspv/third_party/SPIRV-Tools`,
+  built out-of-tree into the repo's gitignored
   `third_party/spirv-tools-build/`; see `regenerate.py --spirv-tools-bin`).
 
 ### Why these flags (the ABI contract the Program module relies on)

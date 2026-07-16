@@ -14,6 +14,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xpose {
@@ -64,17 +65,28 @@ class Context {
   // Ends recording, submits on the compute queue, returns a Fence signaled on
   // completion. The command buffer stays owned by the caller (free after wait).
   Fence submit(VkCommandBuffer cb);
+  // As above, but the Fence runs `on_complete` once completion is observed
+  // (wait()/is_signaled()/destruction). launch() recycles its command buffer
+  // and descriptor sets through this. The hook must not throw.
+  Fence submit(VkCommandBuffer cb, std::function<void()> on_complete);
   void free_command_buffer(VkCommandBuffer cb);
   // begin + record + submit + wait + free, in one call.
   void one_shot(const std::function<void(VkCommandBuffer)>& record);
   void wait_idle();  // vkDeviceWaitIdle — the cudaDeviceSynchronize analog
 
+  // ---- descriptor sets (launch() machinery) --------------------------------
+  // Allocates from an internal, on-demand-growing list of descriptor pools
+  // (storage-buffer descriptors only — the only kind xpose v1 kernels use).
+  // Return sets with free_descriptor_set(); every pool is destroyed with the
+  // Context.
+  VkDescriptorSet allocate_descriptor_set(VkDescriptorSetLayout layout);
+  void free_descriptor_set(VkDescriptorSet set) noexcept;
+
   // ---- raw handles --------------------------------------------------------
   // Seam for the Program/Kernel/launch modules (architecture.md §3–4): pipeline
   // creation needs device()+table(), descriptor writes need allocator()+queue
   // family, dispatch recording uses begin_one_shot()/submit().
-  // TODO(program/launch): add VkPipelineCache accessor + a descriptor-pool and
-  // command-buffer ring here so steady-state launches allocate nothing.
+  // TODO(pipeline-cache): add a persistent VkPipelineCache accessor.
   VkInstance instance() const { return instance_; }
   VkPhysicalDevice physical_device() const { return physical_device_; }
   VkDevice device() const { return device_; }
@@ -87,6 +99,7 @@ class Context {
 
  private:
   uint32_t pick_device(std::optional<uint32_t> explicit_index) const;
+  void add_descriptor_pool();
 
   VkInstance instance_ = VK_NULL_HANDLE;
   VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
@@ -96,6 +109,11 @@ class Context {
   VkCommandPool command_pool_ = VK_NULL_HANDLE;
   VmaAllocator allocator_ = VK_NULL_HANDLE;
   VolkDeviceTable table_{};
+
+  // launch() descriptor pools (created on demand, grown when exhausted) and
+  // the pool each live set came from (vkFreeDescriptorSets needs it).
+  std::vector<VkDescriptorPool> descriptor_pools_;
+  std::unordered_map<VkDescriptorSet, VkDescriptorPool> set_pool_;
 
   std::vector<DeviceInfo> all_devices_;
   uint32_t device_index_ = 0;

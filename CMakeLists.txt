@@ -28,6 +28,8 @@ add_library(xpose STATIC
   src/context.cpp
   src/buffer.cpp
   src/sync.cpp
+  src/program.cpp
+  src/launch.cpp
   src/vma_impl.cpp
   "${XPOSE_VOLK_DIR}/volk.c"
 )

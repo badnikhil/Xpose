@@ -6,8 +6,7 @@ clspv-compiled SPIR-V. Full design docs + decision log live in
 `vulkore-program-launch.md` cover this repo).
 
 ## Rules
-- LOCAL repo only: **never add a remote for THIS repo, never push.** (Submodule
-  remotes point at their public upstreams — that is fine; never push those either.)
+- Submodule remotes point at their public upstreams — never push those.
 - Don't move submodule pins (`third_party/*` SHAs) without recording why here
   and in `../agent-docs/environment.md`.
 - `../agent-docs/` is local-only knowledge base — never commit it here.

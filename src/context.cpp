@@ -201,6 +201,9 @@ uint32_t Context::pick_device(std::optional<uint32_t> explicit_index) const {
 Context::~Context() {
   if (device_ != VK_NULL_HANDLE) {
     table_.vkDeviceWaitIdle(device_);
+    for (VkDescriptorPool pool : descriptor_pools_) {
+      table_.vkDestroyDescriptorPool(device_, pool, nullptr);  // frees its sets
+    }
     if (allocator_ != VK_NULL_HANDLE) vmaDestroyAllocator(allocator_);
     if (command_pool_ != VK_NULL_HANDLE) {
       table_.vkDestroyCommandPool(device_, command_pool_, nullptr);
@@ -242,8 +245,64 @@ Fence Context::submit(VkCommandBuffer cb) {
   return fence;
 }
 
+Fence Context::submit(VkCommandBuffer cb, std::function<void()> on_complete) {
+  Fence fence = submit(cb);
+  fence.on_complete_ = std::move(on_complete);
+  return fence;
+}
+
 void Context::free_command_buffer(VkCommandBuffer cb) {
   table_.vkFreeCommandBuffers(device_, command_pool_, 1, &cb);
+}
+
+// ---- descriptor pools (launch machinery) ----------------------------------
+
+namespace {
+// Sized for many in-flight launches before a second pool is needed; grows
+// unbounded on demand. TODO(ring): a proper ring so steady state reuses sets
+// instead of alloc/free per launch.
+constexpr uint32_t kPoolMaxSets = 128;
+constexpr uint32_t kPoolStorageBuffers = 512;
+}  // namespace
+
+void Context::add_descriptor_pool() {
+  VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            kPoolStorageBuffers};
+  VkDescriptorPoolCreateInfo ci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  ci.maxSets = kPoolMaxSets;
+  ci.poolSizeCount = 1;
+  ci.pPoolSizes = &size;
+  VkDescriptorPool pool = VK_NULL_HANDLE;
+  XP_CHECK(table_.vkCreateDescriptorPool(device_, &ci, nullptr, &pool));
+  descriptor_pools_.push_back(pool);
+}
+
+VkDescriptorSet Context::allocate_descriptor_set(VkDescriptorSetLayout layout) {
+  if (descriptor_pools_.empty()) add_descriptor_pool();
+
+  VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  ai.descriptorSetCount = 1;
+  ai.pSetLayouts = &layout;
+
+  VkDescriptorSet set = VK_NULL_HANDLE;
+  ai.descriptorPool = descriptor_pools_.back();
+  VkResult r = table_.vkAllocateDescriptorSets(device_, &ai, &set);
+  if (r == VK_ERROR_OUT_OF_POOL_MEMORY || r == VK_ERROR_FRAGMENTED_POOL) {
+    add_descriptor_pool();  // current pool exhausted -> grow
+    ai.descriptorPool = descriptor_pools_.back();
+    r = table_.vkAllocateDescriptorSets(device_, &ai, &set);
+  }
+  XP_CHECK(r);
+  set_pool_.emplace(set, ai.descriptorPool);
+  return set;
+}
+
+void Context::free_descriptor_set(VkDescriptorSet set) noexcept {
+  auto it = set_pool_.find(set);
+  if (it == set_pool_.end()) return;
+  table_.vkFreeDescriptorSets(device_, it->second, 1, &set);
+  set_pool_.erase(it);
 }
 
 void Context::one_shot(const std::function<void(VkCommandBuffer)>& record) {

@@ -8,6 +8,7 @@
 #include <vulkore/context.hpp>
 
 #include <cstdint>
+#include <functional>
 
 namespace vulkore {
 
@@ -34,9 +35,14 @@ class Fence {
   Fence(const Context& ctx);  // creates an unsignaled VkFence
 
   void destroy() noexcept;
+  // Runs the completion hook exactly once, the first time completion is
+  // observed (successful wait()/is_signaled(), or the draining destructor).
+  // launch() uses it to recycle its command buffer + descriptor sets.
+  void fire_on_complete() const noexcept;
 
   const Context* ctx_ = nullptr;
   VkFence fence_ = VK_NULL_HANDLE;
+  mutable std::function<void()> on_complete_;
 };
 
 }  // namespace vulkore

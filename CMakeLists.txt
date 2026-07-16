@@ -28,6 +28,8 @@ add_library(vulkore STATIC
   src/context.cpp
   src/buffer.cpp
   src/sync.cpp
+  src/program.cpp
+  src/launch.cpp
   src/vma_impl.cpp
   "${VULKORE_VOLK_DIR}/volk.c"
 )

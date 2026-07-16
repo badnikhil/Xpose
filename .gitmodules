@@ -1,0 +1,25 @@
+[submodule "third_party/Vulkan-Headers"]
+	path = third_party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "third_party/volk"]
+	path = third_party/volk
+	url = https://github.com/zeux/volk
+[submodule "third_party/VulkanMemoryAllocator"]
+	path = third_party/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+[submodule "third_party/googletest"]
+	path = third_party/googletest
+	url = https://github.com/google/googletest
+[submodule "third_party/SPIRV-Tools"]
+	path = third_party/SPIRV-Tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools
+[submodule "third_party/clspv"]
+	path = third_party/clspv
+	url = https://github.com/google/clspv
+	ignore = untracked
+[submodule "third_party/clvk"]
+	path = third_party/clvk
+	url = https://github.com/kpet/clvk
+[submodule "third_party/kompute"]
+	path = third_party/kompute
+	url = https://github.com/KomputeProject/kompute

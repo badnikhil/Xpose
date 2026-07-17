@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -19,7 +20,9 @@ using xpose::ArgKind;
 using xpose::KernelArg;
 
 std::string kernel_path(const std::string& name) {
-  return std::string(XPOSE_KERNEL_DIR) + "/" + name + ".spv";
+  const char* env_dir = std::getenv("XPOSE_KERNEL_DIR");
+  std::string dir = env_dir ? env_dir : XPOSE_KERNEL_DIR;
+  return dir + "/" + name + ".spv";
 }
 
 class ProgramTest : public ::testing::Test {

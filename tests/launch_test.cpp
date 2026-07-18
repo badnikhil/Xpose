@@ -25,7 +25,16 @@ std::string kernel_path(const std::string& name) {
 class LaunchTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() { ctx_ = std::make_unique<xpose::Context>(); }
-  static void TearDownTestSuite() { ctx_.reset(); }
+  static void TearDownTestSuite() {
+    // Programs own Vulkan objects (pipelines/layouts/shader module) tied to
+    // ctx_'s VkDevice and hold a raw Context* — they MUST be destroyed while
+    // that Context is still alive. Clearing here (before ctx_.reset(), and
+    // before process-exit static teardown) upholds the documented
+    // "Program must not outlive its Context" invariant; otherwise these
+    // statics destruct after main returns against a freed device (SIGSEGV).
+    programs_.clear();
+    ctx_.reset();
+  }
 
   static xpose::Kernel load(const std::string& name) {
     programs_.push_back(std::make_unique<xpose::Program>(
@@ -325,6 +334,210 @@ TEST_F(LaunchTest, ForcedStagingTransfersAroundLaunch) {
   std::vector<int32_t> result(n);
   ob.download(std::span<int32_t>(result));
   for (uint32_t i = 0; i < n; ++i) ASSERT_EQ(result[i], a[i] + b[i]);
+}
+
+// ---- cross-pipeline dispatch->dispatch barrier ------------------------------
+
+TEST_F(LaunchTest, CrossKernelRawChain) {
+  // ChainedLaunchesSameBuffer proves the dispatch->dispatch barrier for the
+  // SAME kernel; this proves it ACROSS DIFFERENT pipelines/layouts. saxpy
+  // (2 buffers + 2 POD) writes yb, then WITHOUT a host wait scale_inplace
+  // (1 buffer + 2 POD, a different pipeline) reads+writes the same yb. If the
+  // in-cmdbuf barriers didn't cover cross-pipeline hazards, scale would read
+  // stale data. Both float, so the CPU reference is exact-ish (FLOAT_EQ).
+  xpose::Kernel saxpy = load("saxpy");
+  xpose::Kernel scale = load("scale_inplace");
+  const uint32_t n = 1000;  // not a workgroup multiple (round-up path)
+  const float a = 2.5f, factor = -4.0f;
+  std::vector<float> x(n), y0(n);
+  for (uint32_t i = 0; i < n; ++i) {
+    x[i] = 0.5f * static_cast<float>(i % 37) - 3.0f;
+    y0[i] = static_cast<float>(i % 11);
+  }
+  xpose::Buffer xb = ctx_->alloc<float>(n);
+  xpose::Buffer yb = ctx_->alloc<float>(n);
+  xb.upload(std::span<const float>(x));
+  yb.upload(std::span<const float>(y0));
+
+  xpose::Fence f1 = xpose::launch(saxpy, {n}, yb, xb, a, n);   // yb = a*x + y0
+  xpose::Fence f2 = xpose::launch(scale, {n}, yb, factor, n);  // yb *= factor
+  EXPECT_TRUE(f2.wait());
+  EXPECT_TRUE(f1.is_signaled());  // earlier submission on the same queue
+
+  std::vector<float> result(n);
+  yb.download(std::span<float>(result));
+  for (uint32_t i = 0; i < n; ++i) {
+    const float expected = (a * x[i] + y0[i]) * factor;
+    ASSERT_FLOAT_EQ(result[i], expected) << "i=" << i;
+  }
+}
+
+TEST_F(LaunchTest, InterleavedDifferentKernels) {
+  // Interleave two DIFFERENT kernels (different pipelines, descriptor-set
+  // layouts, and push-constant sizes) with no waits between, so the
+  // descriptor-set / command-buffer recycler juggles mixed layouts in flight.
+  // ManyLaunchesSteadyState stresses recycling but with ONE pipeline; this
+  // adds the mixed-layout dimension. Concurrency is kept at 100 (the count
+  // already proven safe by ManyLaunchesSteadyState) to stay non-flaky.
+  xpose::Kernel scale = load("scale_inplace");  // 1 buffer + 2 POD, 8B push
+  xpose::Kernel add = load("vec_add");          // 3 buffers + 1 POD, 4B push
+  const uint32_t n = 256;
+  const int K = 50;  // 2*K = 100 launches in flight
+
+  xpose::Buffer sf = ctx_->alloc<float>(n);
+  std::vector<float> ones(n, 1.0f);
+  sf.upload(std::span<const float>(ones));
+
+  std::vector<int32_t> a(n), b(n), expected_add(n);
+  for (uint32_t i = 0; i < n; ++i) {
+    a[i] = static_cast<int32_t>(i) * 3 - 5;
+    b[i] = static_cast<int32_t>(i) + 7;
+    expected_add[i] = a[i] + b[i];
+  }
+  xpose::Buffer ab = ctx_->alloc<int32_t>(n);
+  xpose::Buffer bb = ctx_->alloc<int32_t>(n);
+  xpose::Buffer ob = ctx_->alloc<int32_t>(n);
+  ab.upload(std::span<const int32_t>(a));
+  bb.upload(std::span<const int32_t>(b));
+
+  // Alternate *2 / *0.5 so the running product stays in {0.5,1,2} (all exact)
+  // AND ordering matters: a broken chain on sf would apply a factor to a stale
+  // base and drift off the reference.
+  float running = 1.0f;
+  std::vector<xpose::Fence> fences;
+  for (int it = 0; it < K; ++it) {
+    const float factor = (it % 2 == 0) ? 2.0f : 0.5f;
+    running *= factor;
+    fences.push_back(xpose::launch(scale, {n}, sf, factor, n));
+    fences.push_back(xpose::launch(add, {n}, ob, ab, bb, n));  // idempotent
+  }
+  for (auto& f : fences) EXPECT_TRUE(f.wait());
+
+  std::vector<float> sresult(n);
+  sf.download(std::span<float>(sresult));
+  for (uint32_t i = 0; i < n; ++i) ASSERT_EQ(sresult[i], running) << "i=" << i;
+
+  std::vector<int32_t> aresult(n);
+  ob.download(std::span<int32_t>(aresult));
+  ASSERT_EQ(aresult, expected_add);
+}
+
+// ---- grid geometry validation -----------------------------------------------
+
+TEST_F(LaunchTest, GridTooLargeThrows) {
+  // grid.x that needs more workgroups than maxComputeWorkGroupCount[0]
+  // (launch.cpp:29-33). The limit is a real device query, so on drivers where
+  // it is too high to exceed within a uint32 grid (e.g. NVIDIA at 2^31-1) we
+  // GTEST_SKIP rather than fail — keeps the same binary green on the phone too.
+  xpose::Kernel k = load("saxpy");
+  const uint32_t local_x = k.local_size()[0];  // 64 by default
+  const uint32_t max_groups =
+      ctx_->device_properties().limits.maxComputeWorkGroupCount[0];
+  // Smallest grid.x whose ceil(grid.x/local_x) == max_groups + 1 (> the limit).
+  const uint64_t needed =
+      (static_cast<uint64_t>(max_groups) + 1u) * static_cast<uint64_t>(local_x);
+  if (needed > 0xFFFFFFFFull) {
+    GTEST_SKIP() << "device '" << ctx_->device_name()
+                 << "' maxComputeWorkGroupCount[0]=" << max_groups
+                 << " is too high to exceed within a uint32 grid";
+  }
+  const uint32_t grid_x = static_cast<uint32_t>(needed);
+  xpose::Buffer xb = ctx_->alloc<float>(16);
+  xpose::Buffer yb = ctx_->alloc<float>(16);
+  try {
+    xpose::launch(k, {grid_x}, yb, xb, 1.0f, 16u);
+    FAIL() << "expected throw for grid.x=" << grid_x;
+  } catch (const xpose::Error& e) {
+    const std::string msg = e.what();
+    EXPECT_NE(msg.find("workgroups"), std::string::npos) << msg;
+    EXPECT_NE(msg.find("device limit is"), std::string::npos) << msg;
+  }
+}
+
+// Generalizes GridTooLargeThrows (x-only) to all three axes. For each axis the
+// per-axis maxComputeWorkGroupCount is queried at runtime; where it is too high
+// to exceed within a uint32 grid (Mali/RADV: UINT32_MAX on every dim) that axis
+// is skipped, otherwise a grid that needs one workgroup more than the limit is
+// built and launch() must throw naming that axis (guards launch.cpp ~29-33, one
+// group_count() call per axis at ~95-100). Runs meaningfully on NVIDIA (y/z=
+// 65535; x skipped) and llvmpipe (all three = 65535); skips wholesale on
+// Mali/RADV. If no axis is exercisable the whole test skips (never a false pass).
+TEST_F(LaunchTest, GridTooLargeThrowsAllAxes) {
+  xpose::Kernel k = load("saxpy");
+  const std::array<uint32_t, 3> local = k.local_size();  // 64x1x1 by default
+  const VkPhysicalDeviceLimits& lim = ctx_->device_properties().limits;
+  xpose::Buffer xb = ctx_->alloc<float>(16);
+  xpose::Buffer yb = ctx_->alloc<float>(16);
+
+  int tested = 0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const char axis_ch = "xyz"[axis];
+    SCOPED_TRACE(std::string("axis ") + axis_ch);
+    const uint32_t local_a = local[axis];
+    const uint32_t max_groups = lim.maxComputeWorkGroupCount[axis];
+    // Smallest global thread count on this axis whose ceil(global/local) is
+    // max_groups + 1 (one workgroup past the limit).
+    const uint64_t needed =
+        (static_cast<uint64_t>(max_groups) + 1u) * static_cast<uint64_t>(local_a);
+    if (needed > 0xFFFFFFFFull) {
+      continue;  // can't exceed this axis within a uint32 grid (Mali/RADV)
+    }
+    const uint32_t g = static_cast<uint32_t>(needed);
+
+    // Keep the other two axes tiny (1 workgroup) so only the target axis trips.
+    xpose::Grid grid;  // {1,1,1}
+    grid.x = 16;
+    switch (axis) {
+      case 0: grid.x = g; break;
+      case 1: grid.y = g; break;
+      case 2: grid.z = g; break;
+    }
+    try {
+      xpose::launch(k, grid, yb, xb, 1.0f, 16u);
+      ADD_FAILURE() << "expected throw for grid." << axis_ch << '=' << g;
+    } catch (const xpose::Error& e) {
+      const std::string msg = e.what();
+      EXPECT_NE(msg.find(std::string("grid.") + axis_ch), std::string::npos) << msg;
+      EXPECT_NE(msg.find("workgroups"), std::string::npos) << msg;
+      EXPECT_NE(msg.find("device limit is"), std::string::npos) << msg;
+    }
+    ++tested;
+  }
+  if (tested == 0) {
+    GTEST_SKIP() << "device '" << ctx_->device_name()
+                 << "' maxComputeWorkGroupCount is too high on all three axes "
+                    "to exceed within a uint32 grid (Mali/RADV: UINT32_MAX)";
+  }
+}
+
+TEST_F(LaunchTest, ZeroGridYZThrows) {
+  // ZeroGridThrows only covers x==0; y and z go through the same guard
+  // (launch.cpp:22-25, one call per axis) and must throw too.
+  xpose::Kernel k = load("saxpy");
+  xpose::Buffer xb = ctx_->alloc<float>(16);
+  xpose::Buffer yb = ctx_->alloc<float>(16);
+  {
+    SCOPED_TRACE("grid.y == 0");
+    try {
+      xpose::launch(k, {16, 0}, yb, xb, 1.0f, 16u);
+      FAIL() << "expected throw for grid.y==0";
+    } catch (const xpose::Error& e) {
+      const std::string msg = e.what();
+      EXPECT_NE(msg.find("grid.y"), std::string::npos) << msg;
+      EXPECT_NE(msg.find("nonzero"), std::string::npos) << msg;
+    }
+  }
+  {
+    SCOPED_TRACE("grid.z == 0");
+    try {
+      xpose::launch(k, {16, 1, 0}, yb, xb, 1.0f, 16u);
+      FAIL() << "expected throw for grid.z==0";
+    } catch (const xpose::Error& e) {
+      const std::string msg = e.what();
+      EXPECT_NE(msg.find("grid.z"), std::string::npos) << msg;
+      EXPECT_NE(msg.find("nonzero"), std::string::npos) << msg;
+    }
+  }
 }
 
 }  // namespace

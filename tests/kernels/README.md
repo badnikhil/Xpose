@@ -10,9 +10,28 @@ test suite never needs a network connection or a local clspv build.
 | `vec_add` | `(global int* out, global const int* a, global const int* b, uint n)` | int math, 3 buffers + 1 POD |
 | `scale_inplace` | `(global float* data, float factor, uint n)` | single buffer read+write in place |
 | `compare_fp` | `(global int* eq_out, global int* lt_out, global const float* a, global const float* b, uint n)` | per-element `==` / `<` as int results; IEEE edge cases (-0.0==+0.0, NaN!=NaN, -2.0<-1.0) |
+| `transpose_2d` | `(global float* out, global const float* in, uint width, uint height)` | genuine 2-D kernel using BOTH `get_global_id(0)` and `get_global_id(1)`; drives `launch()`'s `grid.y > 1` with real data + `grid.x` round-up + 2-D bound checks |
+| `reqd_wgsize` | `__attribute__((reqd_work_group_size(32,1,1)))` `(global int* out, global const int* in, uint n)` | emits `PropertyRequiredWorkgroupSize` (24) -> `has_reqd_workgroup_size` + baked 32×1×1 local size (not the default 64×1×1) |
+| `two_kernels` | `add_one(global int* data, uint n)` **and** `mul_two(global int* data, uint n)` | one source, TWO entry points -> multi-kernel module: `kernel_names()` order, distinct pipelines, interleaved dispatch from one `Program` |
+| `many_pod` | `(global float* out, float f, int i, uint u, float g, uint n)` | 5 MIXED-type scalar PODs -> a 20-byte push-constant block, offsets 0/4/8/12/16 (packing beyond the 2-scalar shapes) |
 
-Every kernel bound-checks against `n`, so launches may round the grid up to
-whole workgroups (CUDA-style) safely.
+Every kernel bound-checks against `n` (or `width`/`height`), so launches may
+round the grid up to whole workgroups (CUDA-style) safely.
+
+### Per-kernel notes / flag deviations
+
+- **No flag deviation was needed for any of these fixtures** — all four compile
+  under the SAME standard flag set below.
+- `reqd_wgsize`: with the standard flags clspv **does** emit
+  `PropertyRequiredWorkgroupSize %kernel 32 1 1` in the reflection AND a
+  hard-coded `OpExecutionMode %entry LocalSize 32 1 1` — and it **omits**
+  `SpecConstantWorkgroupSize` for this kernel. So the local size comes from the
+  execution mode, not spec constants; `Program` sets `local_size = {32,1,1}`
+  from the reflection and skips spec specialization (its `has_wg_spec_ids` is
+  false here), which agrees with the baked execution mode. Confirmed with
+  `spirv-dis` (`-uniform-workgroup-size` does NOT suppress the property).
+- `transpose_2d`, `two_kernels`, `many_pod`: default workgroup size via
+  `SpecConstantWorkgroupSize 0 1 2` (SpecIds 0/1/2), like the original four.
 
 ## How the binaries were produced (regenerable via `./regenerate.py`)
 

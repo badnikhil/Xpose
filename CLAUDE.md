@@ -10,6 +10,9 @@ clspv-compiled SPIR-V. Full design docs + decision log live in
 - Don't move submodule pins (`third_party/*` SHAs) without recording why here
   and in `../agent-docs/environment.md`.
 - `../agent-docs/` is local-only knowledge base — never commit it here.
+- **Found a failing edge case (especially on real hardware)? Fix the code, keep/add
+  a regression test, AND document the lesson here** — don't just patch and move on.
+  A desktop-only green run is NOT proof of device correctness (see coherency note).
 
 ## Third-party layout (git submodules at `third_party/`)
 - After a fresh clone: `git submodule update --init --recursive`.
@@ -42,6 +45,11 @@ for d in llvmpipe RENOIR NVIDIA; do VULKORE_DEVICE=$d ./build/tests/vulkore_test
 ```
 - Third-party deps resolve to `third_party/` in-repo; override with `-DVULKORE_THIRD_PARTY_DIR=`.
 - No system Vulkan SDK on this machine: headers are vendored, volk dlopens `libvulkan.so.1`.
+- **On-device (Android):** `scripts/run-android.sh` cross-builds arm64, pushes the
+  test binary + `tests/kernels/*.spv`, and runs the suite on a connected phone over
+  adb (`--build` to recompile, `-s <serial>` to select a device). This is the ONLY
+  way to exercise the non-coherent-memory path — run it before trusting buffer
+  transfers. Runner details in `../agent-docs/android-device-testing.md`.
 
 ## Kernels & fixtures
 - Test fixtures: `tests/kernels/*.cl` + committed `.spv` (compiled by
@@ -53,6 +61,30 @@ for d in llvmpipe RENOIR NVIDIA; do VULKORE_DEVICE=$d ./build/tests/vulkore_test
   anything else (images/samplers/UBO-PODs/implicit push constants...).
 - Tests find fixtures via the `VULKORE_KERNEL_DIR` compile definition
   (absolute path — binary is not relocatable; adjust for Android pushes).
+
+## Device portability & memory coherency (READ before touching Buffer/transfers)
+- **Desktop-green != device-green.** Every desktop driver (RADV/NVIDIA/llvmpipe)
+  hands back HOST_VISIBLE **+ HOST_COHERENT** memory, so the non-coherent path is
+  NEVER exercised on desktop. Android GPUs (Mali-G57 verified) expose
+  HOST_VISIBLE | **HOST_CACHED (non-coherent)** memory — a real, correct memory
+  type, not a bug (cached = faster CPU access). This bit us on the first real
+  device run: 6 buffer-transfer tests passed on all 3 desktop drivers, failed on Mali.
+- **Non-coherent = manage the CPU cache, NOT copy data.** UMA devices share one
+  physical RAM (no PCIe, no staging copy needed); the only hazard is the CPU cache
+  being out of sync with RAM. After a host WRITE to mapped memory ->
+  `vmaFlushAllocation` (push cache to RAM so the GPU sees it); before a host READ of
+  GPU output -> `vmaInvalidateAllocation` (drop stale cache, re-read RAM). Both are
+  VMA no-ops on coherent memory, so they cost nothing on desktop.
+- **Buffer transfer strategy** (`src/buffer.cpp`) is keyed on *mappability*, not
+  coherency: direct map+memcpy (+ flush/invalidate when `!coherent_`) whenever the
+  allocation is HOST_VISIBLE; the staging-copy path is reserved for truly
+  non-host-visible device-local memory (discrete GPUs). `Buffer::host_visible()`
+  means "directly mappable" — true for any HOST_VISIBLE allocation, coherent or not.
+- **VMA flush/invalidate require the range be currently host-mapped**
+  (VUID-VkMappedMemoryRange-memory-00684): map first, THEN flush/invalidate while
+  mapped. Getting the order wrong null-derefs inside the Mali driver; desktop hides
+  it because invalidate is a no-op on coherent memory. Full write-up:
+  `../agent-docs/mali-coherency-fix.md`.
 
 ## Layout
 - `include/vulkore/` public headers (`vulkore.hpp` umbrella), `src/` impl, `tests/` googletest.

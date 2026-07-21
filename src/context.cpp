@@ -242,6 +242,11 @@ Fence Context::submit(VkCommandBuffer cb) {
   si.commandBufferCount = 1;
   si.pCommandBuffers = &cb;
   XP_CHECK(table_.vkQueueSubmit(queue_, 1, &si, fence.handle()));
+  // Past this point the fence is in-flight and will signal; only now is it safe
+  // for the Fence to drain-wait on itself during wait()/destruction. If the
+  // submit above threw, the fence stays submitted_==false and is destroyed
+  // without waiting (see Fence::destroy), instead of deadlocking.
+  fence.submitted_ = true;
   return fence;
 }
 

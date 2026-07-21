@@ -42,6 +42,10 @@ class Fence {
 
   const Context* ctx_ = nullptr;
   VkFence fence_ = VK_NULL_HANDLE;
+  // True once vkQueueSubmit has succeeded for this fence. A created-but-never-
+  // submitted fence (e.g. vkQueueSubmit failed) will never signal, so every
+  // drain-wait below is gated on this to avoid deadlocking on it.
+  bool submitted_ = false;
   mutable std::function<void()> on_complete_;
 };
 

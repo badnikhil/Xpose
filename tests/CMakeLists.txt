@@ -7,6 +7,7 @@ add_executable(vulkore_tests
   program_test.cpp
   program_error_test.cpp
   launch_test.cpp
+  batch_test.cpp
   kernel_features_test.cpp
 )
 target_link_libraries(vulkore_tests PRIVATE vulkore gtest)

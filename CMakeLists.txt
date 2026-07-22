@@ -24,6 +24,7 @@ foreach(p IN ITEMS "${VULKORE_VULKAN_HEADERS}/vulkan/vulkan.h"
 endforeach()
 
 option(VULKORE_BUILD_TESTS "Build vulkore unit tests" ON)
+option(VULKORE_BUILD_BENCHMARKS "Build the raw-Vulkan-vs-Vulkore comparison benchmarks" ON)
 option(VULKORE_BUILD_LLM_MODEL "Build the host-side GGUF loader + tokenizer (no GPU)" ON)
 
 add_library(vulkore STATIC
@@ -65,6 +66,10 @@ target_compile_options(vulkore PRIVATE
 )
 set_source_files_properties("${VULKORE_VOLK_DIR}/volk.c" src/vma_impl.cpp
   PROPERTIES COMPILE_OPTIONS "-w")
+
+if(VULKORE_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
 
 if(VULKORE_BUILD_LLM_MODEL)
   add_subdirectory(examples/llm/model)

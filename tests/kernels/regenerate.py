@@ -25,6 +25,17 @@ import urllib.request
 COMPILER_ID = "clspv"
 GODBOLT = "https://godbolt.org"
 
+# Prefer the LOCALLY BUILT clspv when it exists. The godbolt path was written
+# when no local build existed (see CLAUDE.md); one has since been built at
+# third_party/clspv/build/bin/clspv. Local is better in every respect: no
+# network, no rate limit when several agents regenerate concurrently, faster,
+# and reproducible. Verified 2026-07-19 that a locally compiled module loads
+# through vulkore::Program with identical kernel names and workgroup sizes,
+# despite the local build being a different LLVM revision than godbolt's and
+# emitting a differently sized binary.
+LOCAL_CLSPV = (pathlib.Path(__file__).resolve().parent
+               / "../../third_party/clspv/build/bin/clspv").resolve()
+
 # One predictable ABI for every fixture:
 #   -pod-pushconstant        POD kernel args -> a single push-constant block
 #                            (reflection: ArgumentPodPushConstant)
@@ -75,6 +86,8 @@ def compile_on_godbolt(source: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--spirv-tools-bin", default=SPIRV_TOOLS)
+    ap.add_argument("--godbolt", action="store_true",
+                    help="force the hosted compiler even if a local clspv exists")
     ap.add_argument("kernels", nargs="*")
     args = ap.parse_args()
 
@@ -83,14 +96,23 @@ def main() -> int:
     cls = ([pathlib.Path(k) for k in args.kernels]
            or sorted(here.glob("*.cl")))
 
+    use_local = LOCAL_CLSPV.is_file() and not args.godbolt
+
     for cl in cls:
-        print(f"== {cl.name}: godbolt {COMPILER_ID} [{CLSPV_ARGS}]")
-        disasm = compile_on_godbolt(cl.read_text())
         spv = cl.with_suffix(".spv")
-        subprocess.run(
-            [tools / "spirv-as", "--target-env", TARGET_ENV,
-             "--preserve-numeric-ids", "-o", spv, "-"],
-            input=disasm.encode(), check=True)
+        if use_local:
+            print(f"== {cl.name}: local clspv [{CLSPV_ARGS}]")
+            # clspv emits a SPIR-V binary directly, so no spirv-as round trip.
+            subprocess.run([str(LOCAL_CLSPV), *CLSPV_ARGS.split(),
+                            "-o", str(spv), str(cl)],
+                           check=True, stdout=subprocess.DEVNULL)
+        else:
+            print(f"== {cl.name}: godbolt {COMPILER_ID} [{CLSPV_ARGS}]")
+            disasm = compile_on_godbolt(cl.read_text())
+            subprocess.run(
+                [tools / "spirv-as", "--target-env", TARGET_ENV,
+                 "--preserve-numeric-ids", "-o", spv, "-"],
+                input=disasm.encode(), check=True)
         subprocess.run(
             [tools / "spirv-val", "--target-env", TARGET_ENV, spv],
             check=True)

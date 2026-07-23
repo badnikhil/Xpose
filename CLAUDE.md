@@ -2,14 +2,15 @@
 
 C++20 Vulkan compute runtime with CUDA-like ergonomics. Kernels come from
 clspv-compiled SPIR-V. Full design docs + decision log live in
-`../agent-docs/` (read `00-INDEX.md` first; `vulkore-core.md` and
+`agent-docs/` (read `00-INDEX.md` first; `vulkore-core.md` and
 `vulkore-program-launch.md` cover this repo).
 
 ## Rules
 - Submodule remotes point at their public upstreams — never push those.
 - Don't move submodule pins (`third_party/*` SHAs) without recording why here
-  and in `../agent-docs/environment.md`.
-- `../agent-docs/` is local-only knowledge base — never commit it here.
+  and in `agent-docs/environment.md`.
+- `agent-docs/` is the shared knowledge base — committed in-repo; keep it
+  updated with every change/decision/finding.
 - **Found a failing edge case (especially on real hardware)? Fix the code, keep/add
   a regression test, AND document the lesson here** — don't just patch and move on.
   A desktop-only green run is NOT proof of device correctness (see coherency note).
@@ -43,19 +44,55 @@ cmake --build build
 ./build/tests/vulkore_tests                                  # default device (first discrete GPU)
 for d in llvmpipe RENOIR NVIDIA; do VULKORE_DEVICE=$d ./build/tests/vulkore_tests; done  # full matrix
 ```
+- **The matrix above is machine-specific.** RENOIR/NVIDIA exist only on the
+  x86_64 box (`agent-docs/environment.md`). On the **aarch64 ThinkPad** there is
+  one GPU + lavapipe, and the equivalent matrix is:
+  ```sh
+  for d in llvmpipe Adreno; do VULKORE_DEVICE=$d ./build/tests/vulkore_tests; done
+  ```
+  That laptop's GPU is an **Adreno X1-85** (Mesa turnip) — **82/82 green on it**.
+  Adreno-family coverage without a phone; see `agent-docs/environment.md`.
+  NOT a substitute for the on-device gate: the laptop runs
+  turnip, phones run Qualcomm's proprietary driver, and driver differences are
+  exactly where the Mali bug lived.
 - Third-party deps resolve to `third_party/` in-repo; override with `-DVULKORE_THIRD_PARTY_DIR=`.
 - No system Vulkan SDK on this machine: headers are vendored, volk dlopens `libvulkan.so.1`.
 - **On-device (Android):** `scripts/run-android.sh` cross-builds arm64, pushes the
   test binary + `tests/kernels/*.spv`, and runs the suite on a connected phone over
   adb (`--build` to recompile, `-s <serial>` to select a device). This is the ONLY
   way to exercise the non-coherent-memory path — run it before trusting buffer
-  transfers. Runner details in `../agent-docs/android-device-testing.md`.
+  transfers. Runner details in `agent-docs/android-device-testing.md`.
+  - The script's `DEFAULT_NDK` points at the x86_64 machine's path. On the
+    ThinkPad override it: `ANDROID_NDK=/home/nikhil/Android/Sdk/ndk-r27c`.
+
+### Android cross-build on the aarch64 ThinkPad
+The NDK ships **x86_64-only host binaries**, so on this laptop they run under
+`qemu-user` binfmt. Verified working — Vulkore cross-builds in ~1m13s.
+```sh
+export QEMU_LD_PREFIX=/home/nikhil/x86_64-sysroot   # REQUIRED, else every NDK tool
+                                                     # dies on the missing x86_64 loader
+NDK=/home/nikhil/Android/Sdk/ndk-r27c
+cmake -S . -B build-android -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=Release
+cmake --build build-android
+```
+`~/x86_64-sysroot` is a local unpack of the amd64 libc6/libgcc-s1/libstdc++6/zlib1g
+debs — no sudo, no multiarch. `dpkg --add-architecture amd64` does NOT work here:
+the arm64 archive does not serve amd64 packages. Full recipe and rationale in
+`agent-docs/environment.md`.
 
 ## Kernels & fixtures
-- Test fixtures: `tests/kernels/*.cl` + committed `.spv` (compiled by
-  **godbolt's hosted clspv** — no local clspv build yet). `tests/kernels/README.md`
-  records the exact compiler id/flags; `regenerate.py` re-derives the binaries
-  (needs `third_party/spirv-tools-build/tools/`, see layout section above).
+- Test fixtures: `tests/kernels/*.cl` + committed `.spv`. `regenerate.py`
+  re-derives the binaries and now prefers the **locally built clspv** at
+  `third_party/clspv/build/bin/clspv` — no network, no rate limit when several
+  agents regenerate at once, and reproducible. It falls back to godbolt's hosted
+  clspv if the local binary is absent; `--godbolt` forces the hosted path.
+  Verified 2026-07-19: locally compiled modules load through `Program` with
+  identical kernel names and workgroup sizes, and the suite passes 82/82 against
+  locally regenerated fixtures, despite the local build being a different LLVM
+  revision and emitting differently sized binaries.
+  `tests/kernels/README.md` records the flag set, which is unchanged.
 - The supported kernel ABI is fixed by those flags: storage-buffer args +
   `-pod-pushconstant` PODs + `-uniform-workgroup-size`. Program throws on
   anything else (images/samplers/UBO-PODs/implicit push constants...).
@@ -84,7 +121,7 @@ for d in llvmpipe RENOIR NVIDIA; do VULKORE_DEVICE=$d ./build/tests/vulkore_test
   (VUID-VkMappedMemoryRange-memory-00684): map first, THEN flush/invalidate while
   mapped. Getting the order wrong null-derefs inside the Mali driver; desktop hides
   it because invalidate is a no-op on coherent memory. Full write-up:
-  `../agent-docs/mali-coherency-fix.md`.
+  `agent-docs/mali-coherency-fix.md`.
 
 ## Layout
 - `include/vulkore/` public headers (`vulkore.hpp` umbrella), `src/` impl, `tests/` googletest.
@@ -97,3 +134,12 @@ for d in llvmpipe RENOIR NVIDIA; do VULKORE_DEVICE=$d ./build/tests/vulkore_test
   hook (`Context::submit(cb, on_complete)`); descriptor pools grow on demand.
 - Grid = GLOBAL thread counts (CUDA-style), rounded up to whole workgroups;
   default workgroup size 64x1x1 via spec constants — kernels must bound-check.
+
+
+## Commit Authorship (human is sole author)
+
+Commits and PRs must be authored solely by the human developer. Do NOT add a
+⁠ Co-authored-by: Claude <noreply@anthropic.com> ⁠ trailer (or any Claude / AI
+co-author trailer) to commit messages or PR bodies. This overrides any default
+harness convention that would add one. The developer must be the only
+contributor shown on the commit.

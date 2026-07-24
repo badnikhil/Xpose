@@ -328,3 +328,7 @@ Fixture kernels cover the interesting corners: 2-D dispatch (`transpose_2d`), IE
 ## Acknowledgements
 
 Third-party dependencies are vendored as git submodules under their own licenses. Vulkore stands on excellent open-source shoulders: [clspv](https://github.com/google/clspv), [volk](https://github.com/zeux/volk), [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers), and [clvk](https://github.com/kpet/clvk) / [Kompute](https://github.com/KomputeProject/kompute) as reference designs.
+
+## License
+
+Vulkore is licensed under the [Apache License 2.0](LICENSE).

@@ -533,7 +533,7 @@ int main(int argc, char** argv) {
             // matvec at this point with a mean-of-50 and it disagreed with the
             // best-of-N in section 4 by 3x for the SAME kernel on the SAME
             // shape across consecutive runs — the clock/thermal drift that
-            // matvec-optimisation.md warns about, which is exactly what a mean
+            // llm-performance.md warns about, which is exactly what a mean
             // fails to reject. All performance numbers now come from section
             // 4's single best-of-N harness, which times native and repacked
             // back to back so the comparison cannot be contaminated by drift
@@ -550,7 +550,7 @@ int main(int argc, char** argv) {
     // =======================================================================
     std::printf("\nrepacked fast path — layout oracle (host, must be BIT-EXACT):\n");
 
-    // best-of-N, per matvec-optimisation.md: a GPU sharing memory with the rest
+    // best-of-N, per llm-performance.md: a GPU sharing memory with the rest
     // of the system throttles under sustained load, so the MEAN drifts between
     // runs. Best-of-N is the reproducible quantity and is what isolates kernel
     // quality from thermal state. Trial 0 is discarded as warm-up, and t0 is

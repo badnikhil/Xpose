@@ -33,7 +33,7 @@ Modern phones ship serious GPUs, but there is no CUDA on Android. Your options t
 - **Kernels are compiled at build time** by [google/clspv](https://github.com/google/clspv) into Vulkan-flavor (Shader) **SPIR-V** plus reflection metadata.
 - **A slim C++20 Vulkan runtime** loads the `.spv`, maps kernel arguments to descriptor bindings automatically via clspv's reflection, and dispatches. Your host code is `launch(kernel, grid, args...)`, not 300 lines of `VkDescriptorSetLayoutBinding`.
 
-> **Elevator pitch:** *"CUDA-inspired ergonomics, C kernels, runs on any Vulkan Android phone"*: [clvk](https://github.com/kpet/clvk)'s kernel language with [Kompute](https://github.com/KomputeProject/kompute)'s ergonomics, at a fraction of their footprint.
+In short: [clvk](https://github.com/kpet/clvk)'s kernel language with [Kompute](https://github.com/KomputeProject/kompute)'s ergonomics, at a fraction of their footprint.
 
 ```cpp
 // saxpy on the GPU, CUDA-style:
@@ -80,7 +80,7 @@ Same phone, same model, same int4 quantisation:
 | llama.cpp OpenCL (Adreno) | 29.6 |
 | llama.cpp CPU (4 threads) | 29.1 |
 
-> LiteRT's figure is a single reading from their in-app benchmark at a context depth we could not control or record, and their UI exposes no curve, so read this as *comparable or better, and flat where theirs is unknown*, not as a fixed multiple. One more asterisk, ours: Vulkore re-quantises from a mixed-precision GGUF while LiteRT quantises once from fp32, so the bit width matches but fidelity may slightly favour LiteRT. Full method, caveats and the corrections we had to make to our own numbers: [`agent-docs/llm-on-vulkore.md`](agent-docs/llm-on-vulkore.md).
+> LiteRT's figure is a single reading from their in-app benchmark at a context depth we could not control or record, and their UI exposes no curve, so read this as *comparable or better, and flat where theirs is unknown*, not as a fixed multiple. One more asterisk, ours: Vulkore re-quantises from a mixed-precision GGUF while LiteRT quantises once from fp32, so the bit width matches but fidelity may slightly favour LiteRT. Full method, caveats and the corrections we had to make to our own numbers: [`agent-docs/llm-performance.md`](agent-docs/llm-performance.md).
 
 ### Simulation: ten GPU workloads with measured load
 

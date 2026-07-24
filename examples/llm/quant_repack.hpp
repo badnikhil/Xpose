@@ -4,7 +4,7 @@
 // WHY THIS EXISTS. The native-layout kernels in llm_quant.cl are bit-exact and
 // need no host transform — weights go straight from the mmap to the GPU — but
 // they measured 0.9-4.1 GB/s against a ~39 GB/s achievable ceiling. The cause
-// (agent-docs/matvec-optimisation.md) is LOAD INSTRUCTION COUNT: vulkore::Buffer
+// (agent-docs/llm-performance.md) is LOAD INSTRUCTION COUNT: vulkore::Buffer
 // only takes 4-byte element types, so reading a byte out of a 22/34/210-byte
 // block costs a whole 4-byte load. Decode re-reads every weight once per token,
 // so a transform paid ONCE at model load is amortised over thousands of tokens.

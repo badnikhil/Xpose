@@ -398,7 +398,7 @@ kernel void stream4(global float* out, global const uint4* src, uint n,
 // scale stream costs ONE load per four weight loads instead of one per one:
 // per 128 weights the thread issues 4 uint4 + 1 uint2 = 5 loads for 72 bytes,
 // against 8 loads for 80 bytes before. 37.5% fewer load instructions and 10%
-// fewer bytes, which is the axis matvec-optimisation.md found to be decisive.
+// fewer bytes, which is the axis llm-performance.md found to be decisive.
 //
 // Layout: sc[(b/4)*cols + j] as uint2. Consecutive j are consecutive uint2s, so
 // a wave still reads contiguous memory. Requires rows % 128 == 0 (nblk % 4).

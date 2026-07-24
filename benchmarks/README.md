@@ -25,7 +25,7 @@ cmake --build build
 
 ## Lines of code
 
-Counted 2026-07-19 with `grep -vE '^\s*(//|$)' | wc -l` (non-blank,
+Counted with `grep -vE '^\s*(//|$)' | wc -l` (non-blank,
 non-comment).
 
 | | raw Vulkan | Vulkore | ratio |

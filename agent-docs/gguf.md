@@ -338,7 +338,7 @@ path, `llm-performance.md`) cuts that to **0/0/+6.7/+11.1%**.
   driver before quoting phone numbers.
 - **Not wired into decode.** The decode loop still re-quantises everything to
   uniform int4 (a double quantisation, logit corr 0.95 vs ~0.999); swapping in
-  these per-format kernels is the highest-value open quality task, at a measured
+  these per-format kernels is the highest-value open quality task, at a projected
   throughput cost of ~+3.9 ms/token (`llm-performance.md` §native-format trade).
 - No repacked standalone dequant (matvec-only — the op decode needs).
 - Workgroup size untuned (phone and laptop disagree on the best value; tuning

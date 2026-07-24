@@ -329,7 +329,7 @@ kernel void matvec_q6_k(global float* out, global const float* in,
 // per token, so a one-time transform at model load is amortised over thousands
 // of tokens: pay it once. The host side is examples/llm/quant_repack.{hpp,cpp}.
 //
-// The layout follows agent-docs/matvec-optimisation.md, whose finding was that
+// The layout follows agent-docs/llm-performance.md, whose finding was that
 // the decisive factor is LOAD INSTRUCTION COUNT, not coalescing — the old
 // packing was already perfectly coalesced and still spent one load per 4 useful
 // BITS. Two rules came out of that doc and both are obeyed here:
@@ -554,7 +554,7 @@ kernel void matvec_rq8_0(global float* out, global const float4* in,
 // once in this repo for making decode 40% WORSE — that verdict was correct at
 // the time and is now obsolete: it lost because it doubled a dispatch count
 // when a submit cost 0.31 ms. With vulkore::Batch amortising submission the extra
-// reduce pass is nearly free (matvec-optimisation.md measured 2.0x on the
+// reduce pass is nearly free (llm-performance.md measured 2.0x on the
 // tall/narrow `down` shape).
 //
 // Thread id maps to (p, r) as id = p*rows + r so that adjacent threads still

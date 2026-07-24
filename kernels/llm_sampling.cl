@@ -387,7 +387,7 @@ kernel void topk_mask(global float* logits, global const float* topk_val,
 
 // ---- Top-p / nucleus ------------------------------------------------------
 //
-// See agent-docs/llm-sampling-kernels.md: the recommendation is to do top-p on
+// See agent-docs/llm-inference.md: the recommendation is to do top-p on
 // the HOST, after downloading the k survivors. It needs sorted-descending
 // probabilities and a running cumulative sum; the sort is the expensive part
 // and top-k already produced it for k elements, and the host must receive the

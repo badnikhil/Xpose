@@ -244,7 +244,7 @@ uint32_t MatvecConfig::split_for(uint32_t rows, uint32_t cols) const {
     if (split <= 1 || cols >= split_below_cols) return 1;
     uint32_t s = std::min(split, rows / kQBlock);  // never more splits than blocks
     // The workgroup-count limit is real: 262144 columns x 16 splits / 64 is
-    // 65536 workgroups against a device limit of 65535 (matvec-optimisation.md).
+    // 65536 workgroups against a device limit of 65535 (llm-performance.md).
     while (s > 1 && (uint64_t(cols) * s + 63) / 64 > max_workgroups) --s;
     return std::max(s, 1u);
 }
@@ -2931,7 +2931,7 @@ int main(int argc, char** argv) {
         uint32_t emitted = 0;
         // Per-step samples, not just the last one. A phone GPU shares memory
         // with the rest of the system and drifts thermally, so a single step is
-        // not a measurement: matvec-optimisation.md caught the same shape
+        // not a measurement: llm-performance.md caught the same shape
         // reading 2.66 and 2.01 ms in consecutive runs. Report min AND mean so
         // a regression cannot hide behind either.
         std::vector<double> gpu_ms, rec_ms; std::vector<double> smp_ms;

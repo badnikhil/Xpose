@@ -1,6 +1,6 @@
 // Host-side decode loop + KV cache for Gemma 3 1B on Vulkore.
 //
-// This is Track D of agent-docs/llm-on-vulkore.md: the integration layer that
+// This is the integration layer of agent-docs/llm-inference.md: the layer that
 // strings kernels/llm.cl's matvecs and kernels/llm_transformer.cl's small ops
 // together into an actual token. It owns the Context, the Programs, every
 // weight buffer, the KV cache, and the sampling step.
@@ -263,7 +263,7 @@ struct DecodeConfig {
     // Strided partial count for the two-pass RMSNorm.
     uint32_t norm_parts = 64;
     // Tree widths for the parallel argmax: vocab -> parts -> parts2 -> 1.
-    // 4096/64 is the configuration measured best in llm-sampling-kernels.md.
+    // 4096/64 is the configuration measured best in llm-inference.md.
     uint32_t argmax_parts  = 4096;
     uint32_t argmax_parts2 = 64;
     // Three tree dispatches instead of one serial scan. Set false to plan for
@@ -357,7 +357,7 @@ struct DecodeConfig {
 
 // Which matvec kernel to drive, and therefore how the weights are packed.
 //
-// KM4 is the default on the strength of agent-docs/matvec-optimisation.md:
+// KM4 is the default on the strength of agent-docs/llm-performance.md:
 // 2.4x over the `matvec_q4` baseline on the Adreno 840 (11.8 -> 28.5 GB/s).
 // It is a pure repacking done once at load, so it costs nothing at run time.
 // The baseline layout is kept selectable because it is the simpler contract
@@ -376,7 +376,7 @@ struct DecodeConfig {
 // worth more than it sounds: the fp32 scales are 119.2 of the 595.9 MiB a
 // Gemma 3 1B token streams (+25% on top of the nibbles), so halving them
 // removes 10% of ALL weight traffic, and packing four to a uint2 removes 37.5%
-// of the kernel's load instructions — the axis matvec-optimisation.md found to
+// of the kernel's load instructions — the axis llm-performance.md found to
 // be decisive. bf16 (not fp16) so the GPU-side decode is one shift and the
 // fp32 exponent range is preserved; 8 mantissa bits is 0.4% relative against
 // int4's ~7% quantisation step, and --verify is unchanged to six digits.
@@ -412,7 +412,7 @@ struct Paths {
     // That matters far more than it sounds: the single-thread scan over 262144
     // logits measures 31.5 ms on an Adreno X1-85 — comparable to the entire
     // rest of the token — against 0.08 ms for the tree
-    // (agent-docs/llm-sampling-kernels.md). Same output ABI, so it is a
+    // (agent-docs/llm-inference.md). Same output ABI, so it is a
     // genuine drop-in. Missing file => fall back with a warning.
     std::string  sampling_spv = "kernels/llm_sampling.spv";
     std::string  model_gguf;
@@ -469,7 +469,7 @@ struct DispatchPlan {
 
 DispatchPlan plan_token(const DecodeConfig& cfg, const MatvecConfig& mv = {});
 
-// Measured constants from agent-docs/llm-on-vulkore.md and
+// Measured constants from agent-docs/llm-performance.md and
 // agent-docs/llm-transformer-kernels.md (Adreno 840 / Adreno X1-85).
 //
 // NOTE on the bandwidth figures — they are all quoted 25% low upstream.
@@ -480,7 +480,7 @@ DispatchPlan plan_token(const DecodeConfig& cfg, const MatvecConfig& mv = {});
 // 1.25x the published ones:
 //
 //   published (nibbles only)      true (nibbles + scales)
-//   11.8  llm-on-vulkore baseline   14.75
+//   11.8  llm-inference.md baseline   14.75
 //   10.0  matvec_bench reference   12.5
 //   24.7  km4+split4               30.9
 //   28.5  best-per-shape           35.6

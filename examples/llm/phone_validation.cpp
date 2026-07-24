@@ -15,8 +15,8 @@
 //      (agent-docs/mali-coherency-fix.md).
 //
 // So "passes on turnip" is not evidence about the phone, and "launch() raised
-// nothing" is not evidence the kernel ran. This binary covers ALL 24 kernels
-// (19 in llm_transformer.cl + 5 in llm.cl) and checks three things per kernel:
+// nothing" is not evidence the kernel ran. This binary covers 24 kernels
+// (19 of the 25 in llm_transformer.cl + all 5 in llm.cl) and checks three things per kernel:
 //
 //   PARITY   — allclose vs a CPU reference, |gpu-cpu| <= atol + rtol*|cpu|.
 //              The atol term is load-bearing: a pure relative bound produces

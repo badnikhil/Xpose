@@ -429,7 +429,7 @@ kernel void softmax_rows_scale(global float* x, global const float* stats,
 //   * Adjacent threads differ in the KEY index, so their loads are head_dim*4 =
 //     1024 bytes apart. Each thread does consume its whole run, so this is not
 //     read amplification — but it is one scalar load instruction per float, and
-//     `matvec-optimisation.md` already established on this device that load
+//     `llm-performance.md` already established on this device that load
 //     INSTRUCTION COUNT, not coalescing, is what the Adreno cares about.
 //
 // So: one thread per key, reading that key ONCE as float4 (4x fewer loads) and
